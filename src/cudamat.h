@@ -1,8 +1,10 @@
 #ifndef CUDAMAT_H
 #define CUDAMAT_H
 
+#define IDX2C(i,j,ld) (((j)*(ld))+(i))       
+
 typedef struct {
-    float** el;
+    float* el;
     unsigned m;
     unsigned n;
 } Matrix;
