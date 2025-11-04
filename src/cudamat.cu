@@ -7,8 +7,6 @@
 #include <cublas_v2.h>
 #include <stdbool.h>
 
-#define IDX2C(i,j,ld) (((j)*(ld))+(i))
-
 static cublasHandle_t get_handle()
 {
     static bool active = false; 
@@ -28,7 +26,8 @@ void unhandle()
 Matrix init_empty(unsigned m, unsigned n)
 {
     Matrix matrix;
-    matrix.el = (float*)malloc(sizeof(float) * m * n);
+    matrix.el = 0;
+    cudaMalloc((void**)&(matrix.el), sizeof(float)*m*n);
     matrix.m = m;
     matrix.n = n;
     return matrix;
@@ -37,9 +36,12 @@ Matrix init_empty(unsigned m, unsigned n)
 Matrix init_const(unsigned m, unsigned n, float k)
 {
     Matrix matrix = init_empty(m, n);
-    for (unsigned i = 0; i < (m*n); i++) {
-        matrix.el[i] = k;
+    float* h_k = (float*)malloc(sizeof(float)*m*n);
+    for (unsigned i = 0; i < m*n; i++) {
+        h_k[i] = k;
     }
+    cublasSetMatrix(m, n, sizeof(matrix.el[0]), h_k, m, matrix.el, m);
+    free(h_k);
     return matrix; 
 }
 
@@ -56,114 +58,99 @@ Matrix init_ones(unsigned m, unsigned n)
 Matrix init_rand(unsigned m, unsigned n)
 {
     Matrix a = init_empty(m, n);
-    for (unsigned i = 0; i < (m*n); i++) {
-        a.el[i] = (float)2 * (rand() - (float)(RAND_MAX / 2)) / (float)RAND_MAX;
+    float* h_r = (float*)malloc(sizeof(float)*m*n);
+    for (unsigned i = 0; i < m*n; i++) {
+        h_r[i] = (float)2 * (rand() - (float)(RAND_MAX / 2)) / (float)RAND_MAX;
     }
+    cublasSetMatrix(m, n, sizeof(a.el[0]), h_r, m, a.el, m);
+    free(h_r);
     return a;
 }
 
 void mfree(Matrix a)
 {
-    free(a.el);
+    cudaFree(a.el);
 }
 
 Matrix madd(Matrix a, Matrix b)
 {
-    if (a.m != b.m || a.n != b.n) {
-        perror("Matrix size mismatch!\n");
-        return a;
-    }
-    Matrix c = init_empty(a.m, a.n);
-    float* d_a = 0;
-    float* d_b = 0;
-    float* d_c = 0;
+    Matrix c = init_zero(a.m, a.n);
     float alpha = 1.0; 
-    cudaMalloc((void**)&d_a, a.m * a.n * sizeof(d_a[0]));
-    cudaMalloc((void**)&d_b, b.m * b.n * sizeof(d_b[0]));
-    cudaMalloc((void**)&d_c, c.m * c.n * sizeof(d_c[0]));
-    cublasSetMatrix(a.m, a.n, sizeof(a.el[0]), a.el, a.m, d_a, a.m);
-    cublasSetMatrix(a.m, a.n, sizeof(a.el[0]), b.el, b.m, d_b, b.m);
-    cublasSetMatrix(a.m, a.n, sizeof(a.el[0]), c.el, c.m, d_c, c.m);
-    cublasScopy(get_handle(), b.m * b.n, d_b, 1, d_c, 1);
-    cublasSaxpy(get_handle(), a.m * a.n, &alpha, d_a, 1, d_c, 1);
-    cublasGetMatrix(c.m, c.n, sizeof(a.el[0]), d_c, c.m, c.el, c.m);
+    cublasScopy(get_handle(), b.m * b.n, b.el, 1, c.el, 1);
+    cublasSaxpy(get_handle(), a.m * a.n, &alpha, a.el, 1, c.el, 1);
     return c;
 }
 
 Matrix mmult(Matrix a, Matrix b)
 {
-    if (a.n != b.m) {
-        perror("Matrix size mismatch!\n");
-        return a;
-    }
-
     Matrix c = init_zero(a.m, b.n);
-    
+    float alpha = 1.0;
+    cublasSgemm(get_handle(), CUBLAS_OP_N, CUBLAS_OP_N, a.m, b.n, a.n, &alpha, 
+            a.el, a.m, b.el, b.m, &alpha, c.el, c.m);
     return c;
 }
 
 Matrix kmult(float k, Matrix a)
 {
-    Matrix c; 
-    c.m = a.m;
-    c.n = a.n;
+    Matrix c = init_zero(a.m, a.n);
+    cublasSaxpy(get_handle(), a.m * a.n, &k, a.el, 1, c.el, 1);
     return c;
 }
 
 Matrix mtrans(Matrix a)
 {
-    Matrix c;
-    c.m = a.m;
-    c.n = a.n;
+    Matrix c = init_zero(a.n, a.m);
+    Matrix I = ident(a.m);
+    float alpha = 1.0;
+    cublasSgemm(get_handle(), CUBLAS_OP_N, CUBLAS_OP_T, I.m, a.n, I.m, &alpha, 
+            I.el, I.m, a.el, a.m, &alpha, c.el, c.m);
     return c;
 }
 
 Matrix msigmoid(Matrix a)
 {
-    Matrix c;
-    c.m = a.m;
-    c.n = a.n;
+    Matrix c = init_empty(a.m, a.n);
+    float* h_a = (float*)malloc(sizeof(float) * a.m * a.n);
+    cublasGetMatrix(a.m, a.n, sizeof(a.el[0]), a.el, a.m, h_a, a.m);
     for (unsigned i = 0; i < a.m; i++) {
-        c.el[i] = 1 / (1 + exp((float)(-1) * a.el[i]));
+        h_a[i] = 1 / (1 + exp((float)(-1) * h_a[i]));
     }
+    cublasSetMatrix(c.m, c.n, sizeof(h_a[0]), h_a, c.m, c.el, c.m);
+    free(h_a);
     return c;
 }
 
 Matrix ident(unsigned m)
 {
     Matrix a = init_zero(m, m);
+    float* h_a = (float*)malloc(sizeof(float) * a.m * a.n);
     for (unsigned i = 0; i < m; i++) {
-        a.el[IDX2C(i, i, m)] = 1;
+        h_a[IDX2C(i, i, m)] = 1;
     }
+    cublasSetMatrix(a.m, a.n, sizeof(h_a[0]), h_a, a.m, a.el, a.m);
+    free(h_a);
     return a;
 }
 
 void mprint(Matrix a)
 {
+    float* h_a = (float*)malloc(sizeof(float)*(a.m)*(a.n));
+    cublasGetMatrix(a.m, a.n, sizeof(a.el[0]), a.el, a.m, h_a, a.m);
     printf("{ ...\n");
     for (unsigned i = 0; i < a.m; i++) {
         printf("\t{");
         for (unsigned j = 0; j < a.n; j++) {
-            printf(" %f ", a.el[IDX2C(i, j, a.m)]);
+            printf(" %f ", h_a[IDX2C(i, j, a.m)]);
         }
         printf("}\n");
     }
     printf("... }\n");
+    free(h_a);
 }
 
 Matrix mcopy(Matrix a)
 {
-    Matrix b;
-    b.el = (float*)malloc(sizeof(float) * a.m * a.n);
-    b.m = a.m;
-    b.n = a.n;
+    Matrix b = init_empty(a.m, a.n);
+    cublasScopy(get_handle(), a.m * a.n, a.el, 1, b.el, 1);
     return b;
-}
-
-Matrix ginvert(Matrix a)
-{
-    Matrix b = mcopy(a);
-    Matrix c = ident(a.m);
-
-    return c;
 }

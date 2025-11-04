@@ -35,6 +35,4 @@ Matrix ident(unsigned m);
 
 void mprint(Matrix a);
 
-Matrix ginvert(Matrix a);
-
 #endif

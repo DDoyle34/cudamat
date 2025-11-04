@@ -16,4 +16,5 @@ int main()
     mfree(a);
     mfree(b);
     mfree(c);
+    unhandle();
 }
