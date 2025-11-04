@@ -64,9 +64,6 @@ Matrix init_rand(unsigned m, unsigned n)
     curandCreateGenerator(&gen, CURAND_RNG_PSEUDO_DEFAULT);
     curandSetPseudoRandomGeneratorSeed(gen, (unsigned long long)clock());
     curandGenerateUniform(gen, a.el, m * n);
-    //const float scale = 2.0;
-    //const float shift = -1.0;
-    //cublasSetMatrix(m, n, sizeof(a.el[0]), h_r, m, a.el, m);
     return a;
 }
 
