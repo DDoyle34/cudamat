@@ -9,6 +9,8 @@ typedef struct {
     unsigned n;
 } Matrix;
 
+void unhandle();
+
 Matrix init_const(unsigned m, unsigned n, float k);
 
 Matrix init_zero(unsigned m, unsigned n);

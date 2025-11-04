@@ -12,7 +12,7 @@
 static cublasHandle_t get_handle()
 {
     static bool active = false; 
-    cublasHandle_t handle; 
+    static cublasHandle_t handle; 
     if (!active) {
         active = true; 
         cublasCreate(&handle);
@@ -37,7 +37,7 @@ Matrix init_empty(unsigned m, unsigned n)
 Matrix init_const(unsigned m, unsigned n, float k)
 {
     Matrix matrix = init_empty(m, n);
-    for (unsigned i = 0; i < m; i++) {
+    for (unsigned i = 0; i < (m*n); i++) {
         matrix.el[i] = k;
     }
     return matrix; 
@@ -56,7 +56,7 @@ Matrix init_ones(unsigned m, unsigned n)
 Matrix init_rand(unsigned m, unsigned n)
 {
     Matrix a = init_empty(m, n);
-    for (unsigned i = 0; i < m; i++) {
+    for (unsigned i = 0; i < (m*n); i++) {
         a.el[i] = (float)2 * (rand() - (float)(RAND_MAX / 2)) / (float)RAND_MAX;
     }
     return a;
@@ -82,8 +82,8 @@ Matrix madd(Matrix a, Matrix b)
     cudaMalloc((void**)&d_b, b.m * b.n * sizeof(d_b[0]));
     cudaMalloc((void**)&d_c, c.m * c.n * sizeof(d_c[0]));
     cublasSetMatrix(a.m, a.n, sizeof(a.el[0]), a.el, a.m, d_a, a.m);
-    cublasSetMatrix(a.m, a.n, sizeof(a.el[0]), a.el, a.m, d_a, a.m);
-    cublasSetMatrix(a.m, a.n, sizeof(a.el[0]), a.el, a.m, d_a, a.m);
+    cublasSetMatrix(a.m, a.n, sizeof(a.el[0]), b.el, b.m, d_b, b.m);
+    cublasSetMatrix(a.m, a.n, sizeof(a.el[0]), c.el, c.m, d_c, c.m);
     cublasScopy(get_handle(), b.m * b.n, d_b, 1, d_c, 1);
     cublasSaxpy(get_handle(), a.m * a.n, &alpha, d_a, 1, d_c, 1);
     cublasGetMatrix(c.m, c.n, sizeof(a.el[0]), d_c, c.m, c.el, c.m);
