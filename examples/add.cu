@@ -3,18 +3,19 @@
 
 int main()
 {
-    Matrix a = init_rand(3, 3);
-    Matrix b = init_rand(3, 3);
+    Matrix a = init_rand(10000, 100000);
+    // Matrix b = init_rand(10000, 10000);
 
-    mprint(a);
-    mprint(b);
+    //mprint(a);
+    // mprint(b);
 
-    Matrix c = madd(a, b);
+    // Matrix c = madd(a, b);
 
-    mprint(c);
+    // mprint(c);
+    printf("Done!\n");
 
     mfree(a);
-    mfree(b);
-    mfree(c);
+    // mfree(b);
+    // mfree(c);
     unhandle();
 }

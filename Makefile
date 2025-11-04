@@ -22,7 +22,7 @@ cudamat.o: src/cudamat.cu
 # Example: build add.cu linking against libcudamat
 add: examples/add.cu $(TARGET)
 	$(NVCC) $(NVCCFLAGS) $(INCLUDES) -L. -lcudamat -lcublas -Xlinker -rpath \
-    -Xlinker . $< -o $@
+    -Xlinker . -lcurand $< -o $@
 
 # Clean up
 clean:

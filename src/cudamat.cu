@@ -6,6 +6,8 @@
 #include <cuda_runtime.h>
 #include <cublas_v2.h>
 #include <stdbool.h>
+#include <curand.h>
+#include <curand_kernel.h>
 
 static cublasHandle_t get_handle()
 {
@@ -58,12 +60,13 @@ Matrix init_ones(unsigned m, unsigned n)
 Matrix init_rand(unsigned m, unsigned n)
 {
     Matrix a = init_empty(m, n);
-    float* h_r = (float*)malloc(sizeof(float)*m*n);
-    for (unsigned i = 0; i < m*n; i++) {
-        h_r[i] = (float)2 * (rand() - (float)(RAND_MAX / 2)) / (float)RAND_MAX;
-    }
-    cublasSetMatrix(m, n, sizeof(a.el[0]), h_r, m, a.el, m);
-    free(h_r);
+    curandGenerator_t gen;
+    curandCreateGenerator(&gen, CURAND_RNG_PSEUDO_DEFAULT);
+    curandSetPseudoRandomGeneratorSeed(gen, (unsigned long long)clock());
+    curandGenerateUniform(gen, a.el, m * n);
+    //const float scale = 2.0;
+    //const float shift = -1.0;
+    //cublasSetMatrix(m, n, sizeof(a.el[0]), h_r, m, a.el, m);
     return a;
 }
 
