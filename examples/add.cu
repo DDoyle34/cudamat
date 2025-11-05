@@ -26,9 +26,14 @@ int main()
     // Print a 5x5 identity matrix
     mprint(ident(5));
 
-    printf("Done!\n");
+    // Performs the sigmoid function on all elements of a
+    mprint(msigmoid(a));
 
-    mfree(a);
+    // Transposes d
+    Matrix d = init_rand(3, 4);
+    mprint(d);
+    mprint(mtrans(d));
+
     mfree(b);
     mfree(c);
     unhandle();

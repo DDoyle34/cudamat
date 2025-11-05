@@ -137,26 +137,44 @@ Matrix kmult(float k, Matrix a)
     return c;
 }
 
+__global__ void set_trans(float* a, float* c, unsigned* m, unsigned* n)
+{
+    c[blockIdx.x] = a[(blockIdx.x % *n) * (*m) + (blockIdx.x)/(*m)];
+}
+
 Matrix mtrans(Matrix a)
 {
     Matrix c = init_zero(a.n, a.m);
     Matrix I = ident(a.m);
-    float alpha = 1.0;
-    cublasSgemm(get_handle(), CUBLAS_OP_N, CUBLAS_OP_T, I.m, a.n, I.m, &alpha, 
-            I.el, I.m, a.el, a.m, &alpha, c.el, c.m);
+    unsigned *d_m, *d_n;
+    float *d_a, *d_c;
+    cudaMalloc((void**)&d_a, sizeof(float)*a.m*a.n);
+    cudaMalloc((void**)&d_m, sizeof(unsigned));
+    cudaMalloc((void**)&d_n, sizeof(unsigned));
+    cudaMalloc((void**)&d_c, sizeof(float)*c.n*c.m);
+    cudaMemcpy(d_a, a.el, sizeof(float)*a.m*a.n, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_m, &(a.m), sizeof(unsigned), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_n, &(a.n), sizeof(unsigned), cudaMemcpyHostToDevice);
+    set_trans<<<a.m*a.n,1>>>(d_a, d_c, d_m, d_n);
+    cudaMemcpy(c.el, d_c, sizeof(float)*c.m*c.n, cudaMemcpyDeviceToHost);
+    cudaFree(d_a); cudaFree(d_c); cudaFree(d_m); cudaFree(d_n);
     return c;
+}
+
+__global__ void set_sigmoid(float* a)
+{
+    a[blockIdx.x] = 1 / (1 + exp((float)(-1) * a[blockIdx.x])); 
 }
 
 Matrix msigmoid(Matrix a)
 {
     Matrix c = init_empty(a.m, a.n);
-    float* h_a = (float*)malloc(sizeof(float) * a.m * a.n);
-    cublasGetMatrix(a.m, a.n, sizeof(a.el[0]), a.el, a.m, h_a, a.m);
-    for (unsigned i = 0; i < a.m; i++) {
-        h_a[i] = 1 / (1 + exp((float)(-1) * h_a[i]));
-    }
-    cublasSetMatrix(c.m, c.n, sizeof(h_a[0]), h_a, c.m, c.el, c.m);
-    free(h_a);
+    float* d_c;
+    cudaMalloc((void**)&d_c, sizeof(float)*a.m*a.n);
+    cudaMemcpy(d_c, a.el, sizeof(float)*a.m*a.n, cudaMemcpyHostToDevice);
+    set_sigmoid<<<a.m*a.n,1>>>(d_c);
+    cudaMemcpy(c.el, d_c, sizeof(float)*c.m*c.n, cudaMemcpyDeviceToHost);
+    cudaFree(d_c);
     return c;
 }
 
