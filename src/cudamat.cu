@@ -102,37 +102,38 @@ Matrix madd(Matrix a, Matrix b)
     return c;
 }
 
+__global__ void set_mult(float* a, float* b, float* c)
+{
+}
+
 Matrix mmult(Matrix a, Matrix b)
 {
     Matrix c = init_zero(a.m, b.n);
     float alpha = 1.0;
-    float *d_a, *d_b, *d_c, *d_k;
+    float *d_a, *d_b, *d_c;
     cudaMalloc((void**)&d_a, sizeof(float)*a.m*a.n);
     cudaMalloc((void**)&d_b, sizeof(float)*b.m*b.n);
     cudaMalloc((void**)&d_c, sizeof(float)*c.m*c.n);
-    cudaMalloc((void**)&d_k, sizeof(float));
-    cudaMemcpy(d_a, a.el, sizeof(float)*a.m*a.n, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_b, b.el, sizeof(float)*b.m*b.n, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_k, &alpha, sizeof(float), cudaMemcpyHostToDevice);
-    cublasSgemm(get_handle(), CUBLAS_OP_N, CUBLAS_OP_N, a.m, b.n, a.n, d_k, 
-            d_a, a.m, d_b, b.m, d_k, d_c, c.m);
-    cudaMemcpy(c.el, d_c, sizeof(float)*b.m*b.n, cudaMemcpyDeviceToHost);
-    cudaFree(d_a); cudaFree(d_b); cudaFree(d_c); cudaFree(d_k);
+    cublasSetMatrix(a.m, a.n, sizeof(float), a.el, a.m, d_a, a.m);
+    cublasSetMatrix(b.m, b.n, sizeof(float), b.el, b.m, d_b, b.m);
+    cublasSgemm(get_handle(), CUBLAS_OP_N, CUBLAS_OP_N, a.m, b.n, a.n, &alpha, 
+            d_a, a.m, d_b, b.m, &alpha, d_c, c.m);
+    cublasGetMatrix(a.m, a.n, sizeof(float), d_c, c.m, c.el, c.m);
+    cudaFree(d_a); cudaFree(d_b); cudaFree(d_c);
     return c;
 }
 
 Matrix kmult(float k, Matrix a)
 {
     Matrix c = init_zero(a.m, a.n);
-    float *d_a, *d_c, *d_k;
+    float *d_a, *d_c;
     cudaMalloc((void**)&d_a, sizeof(float)*a.m*a.n);
-    cudaMalloc((void**)&d_k, sizeof(float));
     cudaMalloc((void**)&d_c, sizeof(float)*c.m*c.n);
     cudaMemcpy(d_a, a.el, sizeof(float)*a.m*a.n, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_k, &k, sizeof(float), cudaMemcpyHostToDevice);
-    cublasSaxpy(get_handle(), a.m * a.n, d_k, d_a, 1, d_c, 1);
+    cudaMemcpy(d_c, c.el, sizeof(float)*c.m*c.n, cudaMemcpyHostToDevice);
+    cublasSaxpy(get_handle(), a.m * a.n, &k, d_a, 1, d_c, 1);
     cudaMemcpy(c.el, d_c, sizeof(float)*c.m*c.n, cudaMemcpyDeviceToHost);
-    cudaFree(d_a); cudaFree(d_k); cudaFree(d_c);
+    cudaFree(d_a); cudaFree(d_c);
     return c;
 }
 
@@ -159,15 +160,23 @@ Matrix msigmoid(Matrix a)
     return c;
 }
 
+__global__ void set_ident(float* a, unsigned* m)
+{
+    a[blockIdx.x * (*m + 1)] = 1;
+}
+
 Matrix ident(unsigned m)
 {
     Matrix a = init_zero(m, m);
-    float* h_a = (float*)malloc(sizeof(float) * a.m * a.n);
-    for (unsigned i = 0; i < m; i++) {
-        h_a[IDX2C(i, i, m)] = 1;
-    }
-    cublasSetMatrix(a.m, a.n, sizeof(h_a[0]), h_a, a.m, a.el, a.m);
-    free(h_a);
+    float *d_a;
+    unsigned *d_m;
+    cudaMalloc((void**)&d_a, sizeof(float)*m*m);
+    cudaMalloc((void**)&d_m, sizeof(unsigned));
+    cudaMemcpy(d_a, a.el, sizeof(float)*m*m, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_m, &m, sizeof(float), cudaMemcpyHostToDevice);
+    set_ident<<<m*m,1>>>(d_a, d_m);
+    cudaMemcpy(a.el, d_a, sizeof(float)*m*m, cudaMemcpyDeviceToHost);
+    cudaFree(d_a); cudaFree(d_m);
     return a;
 }
 
