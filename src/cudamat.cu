@@ -214,6 +214,10 @@ void mprint(Matrix a)
 Matrix mcopy(Matrix a)
 {
     Matrix b = init_empty(a.m, a.n);
-    cublasScopy(get_handle(), a.m * a.n, a.el, 1, b.el, 1);
+    float *d_a;
+    cudaMalloc((void**)&d_a, sizeof(float)*a.m*a.n);
+    cudaMemcpy(d_a, a.el, sizeof(float)*a.m*a.n, cudaMemcpyHostToDevice);
+    cudaMemcpy(a.el, d_a, sizeof(float)*a.m*a.n, cudaMemcpyDeviceToHost);
+    cudaFree(d_a);
     return b;
 }
