@@ -28,23 +28,29 @@ void unhandle()
 Matrix init_empty(unsigned m, unsigned n)
 {
     Matrix matrix;
-    matrix.el = 0;
-    cudaMalloc((void**)&(matrix.el), sizeof(float)*m*n);
+    matrix.el = (float*)malloc(sizeof(float)*m*n);
     matrix.m = m;
     matrix.n = n;
     return matrix;
 }
 
+__global__ void set_const(float* a, float* k)
+{
+    a[blockIdx.x] = *k;
+}
+
 Matrix init_const(unsigned m, unsigned n, float k)
 {
-    Matrix matrix = init_empty(m, n);
-    float* h_k = (float*)malloc(sizeof(float)*m*n);
-    for (unsigned i = 0; i < m*n; i++) {
-        h_k[i] = k;
-    }
-    cublasSetMatrix(m, n, sizeof(matrix.el[0]), h_k, m, matrix.el, m);
-    free(h_k);
-    return matrix; 
+    Matrix a = init_empty(m, n);
+    float *d_a, *d_k;
+    cudaMalloc((void**)&d_a, sizeof(float)*m*n);
+    cudaMalloc((void**)&d_k, sizeof(float));
+    cudaMemcpy(d_k, &k, sizeof(float), cudaMemcpyHostToDevice);
+    set_const<<<m*n,1>>>(d_a, d_k);
+    cudaMemcpy(a.el, d_a, sizeof(float)*m*n, cudaMemcpyDeviceToHost);
+    cudaFree(d_a);
+    cudaFree(d_k);
+    return a; 
 }
 
 Matrix init_zero(unsigned m, unsigned n)
@@ -63,21 +69,36 @@ Matrix init_rand(unsigned m, unsigned n)
     curandGenerator_t gen;
     curandCreateGenerator(&gen, CURAND_RNG_PSEUDO_DEFAULT);
     curandSetPseudoRandomGeneratorSeed(gen, (unsigned long long)clock());
-    curandGenerateUniform(gen, a.el, m * n);
+    float* d_a = 0;
+    cudaMalloc((void**)&d_a, sizeof(float)*m*n);
+    curandGenerateUniform(gen, d_a, m*n);
+    cudaMemcpy(a.el, d_a, sizeof(float)*m*n, cudaMemcpyDeviceToHost);
+    cudaFree(d_a);
     return a;
 }
 
 void mfree(Matrix a)
 {
-    cudaFree(a.el);
+    free(a.el);
+}
+
+__global__ void set_add(float* a, float* b, float* c)
+{
+    c[blockIdx.x] = a[blockIdx.x] + b[blockIdx.x];
 }
 
 Matrix madd(Matrix a, Matrix b)
 {
-    Matrix c = init_zero(a.m, a.n);
-    float alpha = 1.0; 
-    cublasScopy(get_handle(), b.m * b.n, b.el, 1, c.el, 1);
-    cublasSaxpy(get_handle(), a.m * a.n, &alpha, a.el, 1, c.el, 1);
+    Matrix c = init_empty(a.m, a.n);
+    float *d_a, *d_b, *d_c;
+    cudaMalloc((void**)&d_a, sizeof(float)*a.m*a.n);
+    cudaMalloc((void**)&d_b, sizeof(float)*b.m*b.n);
+    cudaMalloc((void**)&d_c, sizeof(float)*c.m*c.n);
+    cudaMemcpy(d_a, a.el, sizeof(float)*a.m*a.n, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_b, b.el, sizeof(float)*b.m*b.n, cudaMemcpyHostToDevice);
+    set_add<<<a.m*a.n,1>>>(d_a, d_b, d_c);
+    cudaMemcpy(c.el, d_c, sizeof(float)*c.m*c.n, cudaMemcpyDeviceToHost);
+    cudaFree(d_a); cudaFree(d_b); cudaFree(d_c);
     return c;
 }
 
@@ -85,15 +106,33 @@ Matrix mmult(Matrix a, Matrix b)
 {
     Matrix c = init_zero(a.m, b.n);
     float alpha = 1.0;
-    cublasSgemm(get_handle(), CUBLAS_OP_N, CUBLAS_OP_N, a.m, b.n, a.n, &alpha, 
-            a.el, a.m, b.el, b.m, &alpha, c.el, c.m);
+    float *d_a, *d_b, *d_c, *d_k;
+    cudaMalloc((void**)&d_a, sizeof(float)*a.m*a.n);
+    cudaMalloc((void**)&d_b, sizeof(float)*b.m*b.n);
+    cudaMalloc((void**)&d_c, sizeof(float)*c.m*c.n);
+    cudaMalloc((void**)&d_k, sizeof(float));
+    cudaMemcpy(d_a, a.el, sizeof(float)*a.m*a.n, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_b, b.el, sizeof(float)*b.m*b.n, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_k, &alpha, sizeof(float), cudaMemcpyHostToDevice);
+    cublasSgemm(get_handle(), CUBLAS_OP_N, CUBLAS_OP_N, a.m, b.n, a.n, d_k, 
+            d_a, a.m, d_b, b.m, d_k, d_c, c.m);
+    cudaMemcpy(c.el, d_c, sizeof(float)*b.m*b.n, cudaMemcpyDeviceToHost);
+    cudaFree(d_a); cudaFree(d_b); cudaFree(d_c); cudaFree(d_k);
     return c;
 }
 
 Matrix kmult(float k, Matrix a)
 {
     Matrix c = init_zero(a.m, a.n);
-    cublasSaxpy(get_handle(), a.m * a.n, &k, a.el, 1, c.el, 1);
+    float *d_a, *d_c, *d_k;
+    cudaMalloc((void**)&d_a, sizeof(float)*a.m*a.n);
+    cudaMalloc((void**)&d_k, sizeof(float));
+    cudaMalloc((void**)&d_c, sizeof(float)*c.m*c.n);
+    cudaMemcpy(d_a, a.el, sizeof(float)*a.m*a.n, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_k, &k, sizeof(float), cudaMemcpyHostToDevice);
+    cublasSaxpy(get_handle(), a.m * a.n, d_k, d_a, 1, d_c, 1);
+    cudaMemcpy(c.el, d_c, sizeof(float)*c.m*c.n, cudaMemcpyDeviceToHost);
+    cudaFree(d_a); cudaFree(d_k); cudaFree(d_c);
     return c;
 }
 
@@ -134,18 +173,15 @@ Matrix ident(unsigned m)
 
 void mprint(Matrix a)
 {
-    float* h_a = (float*)malloc(sizeof(float)*(a.m)*(a.n));
-    cublasGetMatrix(a.m, a.n, sizeof(a.el[0]), a.el, a.m, h_a, a.m);
     printf("{ ...\n");
     for (unsigned i = 0; i < a.m; i++) {
         printf("\t{");
         for (unsigned j = 0; j < a.n; j++) {
-            printf(" %f ", h_a[IDX2C(i, j, a.m)]);
+            printf(" %f ", a.el[IDX2C(i, j, a.m)]);
         }
         printf("}\n");
     }
     printf("... }\n");
-    free(h_a);
 }
 
 Matrix mcopy(Matrix a)

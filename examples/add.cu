@@ -4,7 +4,7 @@
 int main()
 {
     Matrix a = init_rand(3, 3);
-    Matrix b = init_rand(3, 3);
+    Matrix b = init_const(3, 3, 4);
 
     mprint(a);
     mprint(b);
